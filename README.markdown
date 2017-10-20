@@ -1,80 +1,129 @@
-# Artillery.io AWS Lambda Plugin
+# Artillery.io SQL Plugin
 
 <p align="center">
-    <em>Load test AWS Lambda with <a href="https://artillery.io">Artillery.io</a></em>
+    <em>Load test SQL with <a href="https://artillery.io">Artillery.io</a></em>
 </p>
 
-Based on the [Kinesis Engine by Shoreditch](https://github.com/shoreditch-ops/artillery-engine-kinesis).
+Based on the [Lambda Engine by Orchestrated.io](https://github.com/orchestrated-io/artillery-engine-lambda).
 
 ## Usage
 
-**Important:** The plugin requires Artillery `1.5.8-3` or higher.
+**Important:**
+
+- The plugin requires Artillery `1.5.8-3` or higher.
+- This plugin uses [AnyDB](https://github.com/grncdr/node-any-db) as an underlying method to abstract the DB connectors. You need to install the appropiate connector to your database.
 
 ### Install the plugin
 
 ```
 # If Artillery is installed globally:
-npm install -g artillery-engine-lambda
+npm install -g artillery-engine-sql
 ```
 
 ### Use the plugin
 
-1. Set `config.target` to the name of the Lambda function
-2. Specify additional options in `config.lambda`:
-    - `region` - AWS region (**default**: `us-east-1`)
-3. Set the `engine` property of the scenario to `lambda`.
-4. Use `invoke` in your scenario to invoke the Lambda function
-5. Specify additional invocation parameters:
-    - `payload` - String or object with the payload to send to the Lambda function
-    - `invocationType` - Lambda invocation type. One of `Event`, `RequestResponse`, `DryRun`
-    - `logType` - One of `None`, `Tail`
-    - `qualifier` - Lambda qualifier
-    - `clientContext` - client context to pass to the Lambda function as context
-    - `target` - invocation specific target overriding global default in `config.target`.
+1. Set the `engine` property of the scenario to `sql`.
+2. Set the target to either a string or an object (it's passed directly to AnyDB) as indicated [here](https://github.com/grncdr/node-any-db#api).
+3. Use `query` in your scenario to execute the SQL statement. You can pass either a string or an object.
 
-#### Payload substitution
-The Lambda payload can include variable and function placeholders in the form of `{{ [VAR_NAME_OR_FUNC_CALL] }}`.
+#### Query as String
 
-For example the payload might include a call to the built-in Artillery functions `$randomNumber(min max)` or `$randomString(length)`.
+You can pass either a SQL Query string to read from. The artillery template will be applied upon it, so statements like 'SELECT * from {{ var }}' are supported.
 
-Use `$contextUid()` to get the scenario unique ID in your payload.
+#### Query as an Object
+
+When stating the query as an object the parameter 'statement' is required and all the rest are optional. The parameter 'statement' has support for files and also for template statements.
+The interfaces for 'beforeRequest' and 'afterResponse' are the same as in the [HTTP engine](https://artillery.io/docs/http-reference/#advanced-writing-custom-logic-in-javascript), where 'requestParams' is the target configuration and the query itself. You can modify the query dynamically in beforeRequest before it's executed.
+
+```yaml
+- query:
+  -
+    statement: 'SELECT * from test where id = ?'
+    values:
+      - 45
+    beforeRequest: "before_fn"
+    afterResponse: "after_fn"
+```
 
 #### Example Script
 
 ```yaml
 config:
-  target: "lambda_function_name"
-  lambda:
-    region: "us-east-1"
+  target: "driver://user:pass@hostname/database"
   phases:
     arrivalCount: 10
     duration: 1
   engines:
-    lambda: {}
+    sql: {}
 
 scenarios:
-  - name: "Invoke function"
-    engine: "lambda"
+  - name: "SQL query"
+    engine: "sql"
     flow:
       - loop:
-        - invoke:
-           # data may be a string or an object. Objects
-           # will be JSON.stringified.
-           clientContext: '{"app": "MyApp"}'
-           invocationType: "Event"
-           logType: "Tail"
-           payload: "Some payload"
-           qualifier: "1"
+        - query: 'SELECT * from test'
         - think: 1
         count: 100
 ```
 
 (See [example.yml](example.yml) for a complete example.)
 
+#### Example Script with a long SQL Statement
+
+You can use the above approach to read long SQL statements from a file, see the following example snippet:
+
+```yaml
+scenarios:
+  - name: "DB Query"
+    engine: "sql"
+    flow:
+      - query:
+          beforeRequest: "loadQuery"
+          statement: "./query.sql"
+```
+
+In 'query.sql' you would have the SQL statement, as follows:
+
+```sql
+Select * from test
+```
+
+In your processor file, you would have something like this:
+
+```typescript
+interface UserContext {
+    vars: { [k: string]: string | number };
+}
+
+interface DBParams {
+    query: string;
+    args: string[];
+    afterResponse: Function;
+    beforeRequest: Function;
+    target: Object;
+}
+
+function loadQuery(params: DBParams, context: UserContext, ee: EventListener, next: (err?: Error) => void) {
+    let filePath = params.query;
+    if (filePath !== path.basename(filePath)) {
+        // the query is a path
+        if (!path.isAbsolute(filePath) && !fs.existsSync(filePath)) {
+            // it may be relative to us
+            filePath = path.resolve(__dirname, filePath);
+        }
+        if (fs.existsSync(filePath) && fs.lstatSync(filePath).isFile()) {
+            params.query = fs.readFileSync(filePath).toString();
+        }
+    }
+    next();
+}
+module.exports = { loadQuery: loadQuery };
+```
+
 ### Run Your Script
 
-```
-AWS_PROFILE=dev artillery run my_script.yml
+```bash
+artillery run my_script.yml
 ```
 
 ### License

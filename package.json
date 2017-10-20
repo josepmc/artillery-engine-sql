@@ -1,7 +1,7 @@
 {
-  "name": "artillery-engine-lambda",
-  "version": "1.0.14",
-  "description": "Load test AWS Lambda with Artillery.io",
+  "name": "artillery-engine-sql",
+  "version": "1.0.0",
+  "description": "Load test SQL with Artillery.io",
   "main": "index.js",
   "scripts": {
     "test": "node test/index.js",
@@ -9,18 +9,17 @@
     "precommit": "semistandard"
   },
   "keywords": [
-    "lambda",
+    "sql",
     "load"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/orchestrated-io/artillery-engine-lambda"
+    "url": "https://github.com/immoweb/artillery-engine-sql"
   },
-  "author": "Orchestrated Systems",
+  "author": "Josep Mateu Clemente <jmateu.clemente@gmail.com>",
   "license": "MPL-2.0",
   "devDependencies": {
     "conventional-changelog-lint": "^1.1.9",
-    "debug": "^2.6.4",
     "eslint": "^3.19.0",
     "eslint-config-standard": "^10.2.1",
     "eslint-plugin-import": "^2.2.0",
@@ -32,10 +31,14 @@
     "tape": "^4.6.3"
   },
   "dependencies": {
+    "any-db": "^2.2.0",
+    "any-db-mssql": "^0.1.0",
     "artillery-core": "^4.6.0",
     "async": "^1.5.2",
-    "aws-sdk": "^2.45.0",
     "debug": "^2.6.6",
     "lodash": "^4.17.4"
+  },
+  "peerDependencies": {
+    "any-db": "^2.2.0"
   }
 }

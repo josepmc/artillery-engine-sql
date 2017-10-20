@@ -4,13 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Lambda = require('aws-sdk/clients/lambda');
-const debug = require('debug')('engine:lambda');
+const debug = require('debug')('engine:sql');
 const A = require('async');
 const _ = require('lodash');
 const helpers = require('artillery-core/lib/engine_util');
+const anyDB = require('any-db');
+const fs = require('fs');
+let config;
 
-function LambdaEngine (script, ee) {
+function SQLEngine(script, ee) {
   this.script = script;
   this.ee = ee;
   this.helpers = helpers;
@@ -19,13 +21,13 @@ function LambdaEngine (script, ee) {
   return this;
 }
 
-LambdaEngine.prototype.createScenario = function createScenario (scenarioSpec, ee) {
+SQLEngine.prototype.createScenario = function createScenario(scenarioSpec, ee) {
   const tasks = scenarioSpec.flow.map(rs => this.step(rs, ee));
 
   return this.compile(tasks, scenarioSpec.flow, ee);
 };
 
-LambdaEngine.prototype.step = function step (rs, ee, opts) {
+SQLEngine.prototype.step = function step(rs, ee, opts) {
   opts = opts || {};
   let self = this;
 
@@ -46,7 +48,7 @@ LambdaEngine.prototype.step = function step (rs, ee, opts) {
   }
 
   if (rs.log) {
-    return function log (context, callback) {
+    return function log(context, callback) {
       return process.nextTick(function () { callback(null, context); });
     };
   }
@@ -68,43 +70,61 @@ LambdaEngine.prototype.step = function step (rs, ee, opts) {
     };
   }
 
-  if (rs.invoke) {
-    return function invoke (context, callback) {
-      context.funcs.$increment = self.$increment;
-      context.funcs.$decrement = self.$decrement;
-			context.funcs.$contextUid = function () {
-			 return context._uid;
-			};
-
-      const payload = typeof rs.invoke.payload === 'object'
-            ? JSON.stringify(rs.invoke.payload)
-            : String(rs.invoke.payload);
-
-      var params = {
-        ClientContext: Buffer.from(rs.invoke.clientContext || '{}').toString('base64'),
-        FunctionName: rs.invoke.target || self.script.config.target,
-        InvocationType: rs.invoke.invocationType || 'Event',
-        LogType: rs.invoke.logType || 'Tail',
-        Payload: helpers.template(payload, context),
-        Qualifier: rs.invoke.qualifier || '$LATEST'
-      };
-
-      ee.emit('request');
-      const startedAt = process.hrtime();
-      context.lambda.invoke(params, function (err, data) {
-        if (err) {
-          debug(err);
-          ee.emit('error', err);
+  if (rs.query) {
+    return function query(context, callback) {
+      debug('Running Query');
+      let params = {
+        query: rs.query,
+        args: [],
+        afterResponse: null,
+        beforeRequest: null,
+        target: config.target
+      }
+      if (typeof rs.query === 'object') {
+        params = {
+          query: rs.query.statement,
+          args: rs.query.values,
+          afterResponse: rs.query.afterResponse,
+          beforeRequest: rs.query.beforeRequest,
+          target: config.target
+        }
+      }
+      debug(params);
+      params.query = helpers.template(params.query, context);
+      let before = err => {
+        let onError = err => {
+          debug('Query Error');
+          //debug(err);
+          ee.emit('error', err.number);
           return callback(err, context);
         }
+        if (err) return onError(err);
+        ee.emit('request');
+        const startedAt = process.hrtime();
+        context.sql.query(params.query, params.args, function (err, data) {
+          if (err) return onError(err);
 
-        let code = data.StatusCode || 0;
-        const endedAt = process.hrtime(startedAt);
-        let delta = (endedAt[0] * 1e9) + endedAt[1];
-        ee.emit('response', delta, code, context._uid);
-        debug(data);
-        return callback(null, context);
-      });
+          const endedAt = process.hrtime(startedAt);
+          let delta = (endedAt[0] * 1e9) + endedAt[1];
+          let after = err => {
+            if (err) return onError(err);
+            ee.emit('response', delta, 0, data.rowCount);
+            debug('Query Response');
+            debug(data);
+            return callback(null, context);
+          };
+          if (params.afterResponse && config.processor[params.afterResponse]) {
+            debug('Executing afterResponse');
+            config.processor[params.afterResponse](params, data, context, ee, after);
+          }
+          else after();
+        });
+      };
+      if (params.beforeRequest && config.processor[params.beforeRequest]) {
+        debug('Executing beforeRequest');
+        config.processor[params.beforeRequest](params, context, ee, before);
+      }
+      else before();
     };
   }
 
@@ -113,19 +133,15 @@ LambdaEngine.prototype.step = function step (rs, ee, opts) {
   };
 };
 
-LambdaEngine.prototype.compile = function compile (tasks, scenarioSpec, ee) {
+SQLEngine.prototype.compile = function compile(tasks, scenarioSpec, ee) {
   const self = this;
-  return function scenario (initialContext, callback) {
-    const init = function init (next) {
-      let opts = {
-        region: self.script.config.lambda.region || 'us-east-1'
-      };
+  return function scenario(initialContext, callback) {
+    const init = function init(next) {
+      debug('Configuration');
+      config = self.script.config;
+      debug(config.target);
+      initialContext.sql = anyDB.createConnection(config.target);
 
-      if (self.script.config.lambda.function) {
-        opts.endpoint = self.script.config.lambda.function;
-      }
-
-      initialContext.lambda = new Lambda(opts);
       ee.emit('started');
       return next(null, initialContext);
     };
@@ -134,7 +150,7 @@ LambdaEngine.prototype.compile = function compile (tasks, scenarioSpec, ee) {
 
     A.waterfall(
       steps,
-      function done (err, context) {
+      function done(err, context) {
         if (err) {
           debug(err);
         }
@@ -144,12 +160,4 @@ LambdaEngine.prototype.compile = function compile (tasks, scenarioSpec, ee) {
   };
 };
 
-LambdaEngine.prototype.$increment = function $increment(value) {
-  return Number.isInteger(value) ? value += 1 : NaN;
-}
-
-LambdaEngine.prototype.$decrement = function $decrement(value) {
-  return Number.isInteger(value) ? value -= 1 : NaN;
-}
-
-module.exports = LambdaEngine;
+module.exports = SQLEngine;

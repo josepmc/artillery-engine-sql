@@ -1,33 +1,18 @@
-# Emulate 20 publishers sending two records per second
+# Emulate 20 users sending two queries per second
 # for 60 seconds.
 config:
-  target: "my_awesome_function"
-  lambda:
-    region: "ap-southeast-2"
+  target: "driver://user:pass@hostname/database"
   phases:
-    - arrivalCount: 10
-      duration: 1
+    arrivalCount: 10
+    duration: 1
   engines:
-    lambda: {}
+    sql: {}
 
 scenarios:
-  - name: "Invoke function"
-    engine: lambda
+  - name: "SQL query"
+    engine: "sql"
     flow:
       - count: 60
         loop:
-        - invoke:
-            # Event, RequestResponse or DryRun
-            clientContext: ""
-            invocationType: "Event"
-            # Tail or None
-            logType: "Tail"
-            payload: ""
-            qualifier: ""
-        - invoke:
-            clientContext: ""
-            invocationType: "event"
-            logType: "Tail"
-            payload: ""
-            qualifier: ""
+        - query: "SELECT * from test"
         - think: 1

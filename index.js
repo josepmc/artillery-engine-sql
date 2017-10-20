@@ -9,10 +9,9 @@ const A = require('async');
 const _ = require('lodash');
 const helpers = require('artillery-core/lib/engine_util');
 const anyDB = require('any-db');
-const fs = require('fs');
 let config;
 
-function SQLEngine(script, ee) {
+function SQLEngine (script, ee) {
   this.script = script;
   this.ee = ee;
   this.helpers = helpers;
@@ -21,13 +20,13 @@ function SQLEngine(script, ee) {
   return this;
 }
 
-SQLEngine.prototype.createScenario = function createScenario(scenarioSpec, ee) {
+SQLEngine.prototype.createScenario = function createScenario (scenarioSpec, ee) {
   const tasks = scenarioSpec.flow.map(rs => this.step(rs, ee));
 
   return this.compile(tasks, scenarioSpec.flow, ee);
 };
 
-SQLEngine.prototype.step = function step(rs, ee, opts) {
+SQLEngine.prototype.step = function step (rs, ee, opts) {
   opts = opts || {};
   let self = this;
 
@@ -48,7 +47,7 @@ SQLEngine.prototype.step = function step(rs, ee, opts) {
   }
 
   if (rs.log) {
-    return function log(context, callback) {
+    return function log (context, callback) {
       return process.nextTick(function () { callback(null, context); });
     };
   }
@@ -71,7 +70,7 @@ SQLEngine.prototype.step = function step(rs, ee, opts) {
   }
 
   if (rs.query) {
-    return function query(context, callback) {
+    return function query (context, callback) {
       debug('Running Query');
       let params = {
         query: rs.query,
@@ -79,7 +78,7 @@ SQLEngine.prototype.step = function step(rs, ee, opts) {
         afterResponse: null,
         beforeRequest: null,
         target: config.target
-      }
+      };
       if (typeof rs.query === 'object') {
         params = {
           query: rs.query.statement,
@@ -87,17 +86,17 @@ SQLEngine.prototype.step = function step(rs, ee, opts) {
           afterResponse: rs.query.afterResponse,
           beforeRequest: rs.query.beforeRequest,
           target: config.target
-        }
+        };
       }
       debug(params);
       params.query = helpers.template(params.query, context);
       let before = err => {
         let onError = err => {
           debug('Query Error');
-          //debug(err);
+          // debug(err);
           ee.emit('error', err.number);
           return callback(err, context);
-        }
+        };
         if (err) return onError(err);
         ee.emit('request');
         const startedAt = process.hrtime();
@@ -116,15 +115,13 @@ SQLEngine.prototype.step = function step(rs, ee, opts) {
           if (params.afterResponse && config.processor[params.afterResponse]) {
             debug('Executing afterResponse');
             config.processor[params.afterResponse](params, data, context, ee, after);
-          }
-          else after();
+          } else after();
         });
       };
       if (params.beforeRequest && config.processor[params.beforeRequest]) {
         debug('Executing beforeRequest');
         config.processor[params.beforeRequest](params, context, ee, before);
-      }
-      else before();
+      } else before();
     };
   }
 
@@ -133,10 +130,10 @@ SQLEngine.prototype.step = function step(rs, ee, opts) {
   };
 };
 
-SQLEngine.prototype.compile = function compile(tasks, scenarioSpec, ee) {
+SQLEngine.prototype.compile = function compile (tasks, scenarioSpec, ee) {
   const self = this;
-  return function scenario(initialContext, callback) {
-    const init = function init(next) {
+  return function scenario (initialContext, callback) {
+    const init = function init (next) {
       debug('Configuration');
       config = self.script.config;
       debug(config.target);
@@ -150,7 +147,7 @@ SQLEngine.prototype.compile = function compile(tasks, scenarioSpec, ee) {
 
     A.waterfall(
       steps,
-      function done(err, context) {
+      function done (err, context) {
         if (err) {
           debug(err);
         }

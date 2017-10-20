@@ -1,6 +1,6 @@
 {
   "name": "artillery-engine-sql",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Load test SQL with Artillery.io",
   "main": "index.js",
   "scripts": {
@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "any-db": "^2.2.0",
-    "any-db-mssql": "^0.1.0",
+    "@immoweb/any-db-mssql": "^1.0.0",
     "any-db-mysql": "^2.1.2",
     "any-db-postgres": "^2.1.5",
     "any-db-sqlite3": "^2.1.4",
